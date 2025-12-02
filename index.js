@@ -27,14 +27,66 @@ class ComputerUsingAgent {
     return screenshot.toString('base64');
   }
 
-  async executeAction(action) {
-    if (action.toolName === 'click') {
-      const { x, y } = action.args;
-      await this.page.mouse.click(x, y);
-    } else if (action.toolName === 'type') {
-      const { x, y, text } = action.args;
-      await this.page.mouse.click(x, y);
-      await this.page.keyboard.type(text);
+  async handleModelAction(action) {
+    const actionType = action.toolName;
+
+    try {
+      switch (actionType) {
+        case "click": {
+          const { x, y, button = "left" } = action.args;
+          console.log(`Action: click at (${x}, ${y}) with button '${button}'`);
+          await this.page.mouse.click(x, y, { button });
+          break;
+        }
+
+        case "scroll": {
+          const { x, y, scrollX, scrollY } = action.args;
+          console.log(
+            `Action: scroll at (${x}, ${y}) with offsets (scrollX=${scrollX}, scrollY=${scrollY})`
+          );
+          await this.page.mouse.move(x, y);
+          await this.page.evaluate(`window.scrollBy(${scrollX}, ${scrollY})`);
+          break;
+        }
+
+        case "keypress": {
+          const { keys } = action.args;
+          for (const k of keys) {
+            console.log(`Action: keypress '${k}'`);
+            if (k.includes("ENTER")) {
+              await this.page.keyboard.press("Enter");
+            } else if (k.includes("SPACE")) {
+              await this.page.keyboard.press(" ");
+            } else {
+              await this.page.keyboard.press(k);
+            }
+          }
+          break;
+        }
+
+        case "type": {
+          const { text } = action.args;
+          console.log(`Action: type text '${text}'`);
+          await this.page.keyboard.type(text);
+          break;
+        }
+
+        case "wait": {
+          console.log(`Action: wait`);
+          await this.page.waitForTimeout(2000);
+          break;
+        }
+
+        case "screenshot": {
+          console.log(`Action: screenshot`);
+          break;
+        }
+
+        default:
+          console.log("Unrecognized action:", action);
+      }
+    } catch (e) {
+      console.error("Error handling action", action, ":", e);
     }
   }
 
@@ -52,15 +104,37 @@ class ComputerUsingAgent {
             parameters: z.object({
               x: z.number(),
               y: z.number(),
+              button: z.enum(['left', 'middle', 'right']).optional(),
             }),
           },
-          type: {
-            description: 'Type text into an element',
+          scroll: {
+            description: 'Scroll the page',
             parameters: z.object({
               x: z.number(),
               y: z.number(),
+              scrollX: z.number(),
+              scrollY: z.number(),
+            }),
+          },
+          keypress: {
+            description: 'Press a key',
+            parameters: z.object({
+              keys: z.array(z.string()),
+            }),
+          },
+          type: {
+            description: 'Type text',
+            parameters: z.object({
               text: z.string(),
             }),
+          },
+          wait: {
+            description: 'Wait for a period of time',
+            parameters: z.object({}),
+          },
+          screenshot: {
+            description: 'Take a screenshot',
+            parameters: z.object({}),
           },
         },
         messages: [
@@ -76,7 +150,7 @@ class ComputerUsingAgent {
 
       let actionTaken = false;
       for await (const toolCall of result.toolInvocations) {
-        await this.executeAction(toolCall);
+        await this.handleModelAction(toolCall);
         actionTaken = true;
       }
 
